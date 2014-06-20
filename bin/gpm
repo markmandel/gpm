@@ -2,6 +2,11 @@
 
 set -eu
 
+#default values
+GOBIN=go
+DEPS_FILE="Godeps"
+GET_OPTIONS="-u -d"
+
 ## Functions/
 usage() {
 cat << EOF
@@ -31,11 +36,50 @@ USAGE
                         # them to the appropriate version.
       $ gpm version     # Outputs version information
       $ gpm help        # Prints this message
+
+INSTALL FLAGS
+
+      These flags are available when using the "install" command
+
+      -f           The file to parse. By default this is "Godeps"
+
+      -g           The go binary to use. Defaults to "go"
+
+      -u      	   Whether or not to use the -u option with "go get".
+                   Set to 0 to turn off. Defaults to 1.
+
+EXAMPLES
+     Call gpm with a deps file named Foodeps
+     $ gpm -f Foodeps
+
+     Use GAE's goapp as the go binary, and disable networking on goapp get
+     $ gpm -g "./go_appengine/goapp" -u 0
+
 EOF
 }
 
 is_in_use() {
   [[ -e "$1/.git/index.lock" || -e "$1/.hg/store/lock"  || -e "$1/.bzr/checkout/lock" ]]
+}
+
+parse_install_flags() {
+  while getopts "f:g:u:" OPTION; do
+     case $OPTION in
+         f)
+             DEPS_FILE=$OPTARG
+             ;;
+         g)
+             GOBIN=$OPTARG
+             ;;
+         u)
+             if [ $OPTARG -eq 0 ]
+             then
+               GET_OPTIONS="-d"
+             fi
+             ;;
+     esac
+  done
+  shift $(($OPTIND-1)) #didn't your mother always tell you to clean up after yourself?
 }
 
 # Iterates over Godep file dependencies and sets
@@ -51,7 +95,7 @@ set_dependencies() {
       # Retries in case of possible race conditions when installing a package
       # dependency
       for ((i=0; i<5; i++)); do
-        out=$(go get -u -d "$package" 2>&1 >/dev/null) && break
+        out=$($GOBIN get $GET_OPTIONS "$package" 2>&1 >/dev/null) && break
       done
       [[ $? != 0 ]] && echo "-- Failed to get "$package", error: " && echo "$out" && exit 1
 
@@ -68,6 +112,7 @@ set_dependencies() {
   wait
   echo ">> All Done"
 }
+
 ## /Functions
 
 ## Command Line Parsing
@@ -76,11 +121,11 @@ case "${1:-"install"}" in
     echo ">> gpm v1.2.3"
     ;;
   "install")
-    deps_file="${2:-"Godeps"}"
-    [[ -f "$deps_file" ]] || (echo ">> $deps_file file does not exist." && exit 1)
-    (which go > /dev/null) ||
-      ( echo ">> Go is currently not installed or in your PATH" && exit 1)
-    set_dependencies $deps_file
+    parse_install_flags "${@:2}"
+    [[ -f "$DEPS_FILE" ]] || (echo ">> $DEPS_FILE file does not exist." && exit 1)
+    (which $GOBIN > /dev/null) ||
+      ( echo ">> $GOBIN is currently not installed or in your PATH" && exit 1)
+    set_dependencies $DEPS_FILE
     ;;
   "help")
     usage
